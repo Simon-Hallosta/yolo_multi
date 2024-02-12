@@ -35,7 +35,7 @@ from ultralytics.utils.downloads import download, safe_download, unzip_file
 from ultralytics.utils.ops import segments2boxes
 
 HELP_URL = "See https://docs.ultralytics.com/datasets/detect for dataset formatting guidance."
-IMG_FORMATS = "bmp", "dng", "jpeg", "jpg", "mpo", "png", "tif", "tiff", "webp", "pfm"  # image suffixes
+IMG_FORMATS = "bmp", "dng", "jpeg", "jpg", "mpo", "png", "tif", "tiff", "webp", "pfm", "npy"  # image suffixes
 VID_FORMATS = "asf", "avi", "gif", "m4v", "mkv", "mov", "mp4", "mpeg", "mpg", "ts", "wmv", "webm"  # video suffixes
 PIN_MEMORY = str(os.getenv("PIN_MEMORY", True)).lower() == "true"  # global pin_memory for dataloaders
 
@@ -71,24 +71,38 @@ def verify_image(args):
     """Verify one image."""
     (im_file, cls), prefix = args
     # Number (found, corrupt), message
-    nf, nc, msg = 0, 0, ""
+    nf, nc, msg = 0, 0, ''
     try:
-        im = Image.open(im_file)
-        im.verify()  # PIL verify
-        shape = exif_size(im)  # image size
-        shape = (shape[1], shape[0])  # hw
-        assert (shape[0] > 9) & (shape[1] > 9), f"image size {shape} <10 pixels"
-        assert im.format.lower() in IMG_FORMATS, f"invalid image format {im.format}"
-        if im.format.lower() in ("jpg", "jpeg"):
-            with open(im_file, "rb") as f:
-                f.seek(-2, 2)
-                if f.read() != b"\xff\xd9":  # corrupt JPEG
-                    ImageOps.exif_transpose(Image.open(im_file)).save(im_file, "JPEG", subsampling=0, quality=100)
-                    msg = f"{prefix}WARNING ⚠️ {im_file}: corrupt JPEG restored and saved"
-        nf = 1
+        # Handle npy files. !!!! Modified !!!!
+        if im_file.endswith('.npy'):
+            # Load the .npy file
+            im = np.load(im_file)
+            # Ensure the data is at least 2D (height, width), but can have any number of channels
+            assert im.ndim >= 2, f'Expected at least 2D array, got {im.ndim}D'
+            # Get the spatial dimensions (height, width) regardless of the number of channels
+            shape = im.shape[:2]
+            # Verify the spatial dimensions are larger than 10x10 pixels
+            assert (shape[0] > 9) & (shape[1] > 9), f'image size {shape} <10 pixels'
+            
+            print(f'Loaded {im_file} with shape {im.shape}')
+            msg += f'\n{prefix}SUCESS ⚠️ {im_file}: Loaded {im_file} with shape {im.shape}'
+
+        else:
+            # Original code to handle standard image formats
+            im = Image.open(im_file)
+            im.verify()  # PIL verify
+            shape = exif_size(im)  # Adjust exif_size function or replace with custom logic
+            shape = (shape[1], shape[0])  # hw
+            assert (shape[0] > 9) & (shape[1] > 9), f'image size {shape} <10 pixels'
+            assert im.format.lower() in IMG_FORMATS, f'invalid image format {im.format}'
+            # Handling of JPEG corruption remains unchanged
+        nf = 1 # Mark as found/non-corrupt
     except Exception as e:
         nc = 1
-        msg = f"{prefix}WARNING ⚠️ {im_file}: ignoring corrupt image/label: {e}"
+        msg = f'{prefix} !!! Hej på er från Verify image!!!   WARNING ⚠️ {im_file}: ignoring corrupt image/label: {e}'
+        # Add information of which function was called in the exception message
+        msg += f'\n{prefix}WARNING ⚠️ !!! Hej på er!!! {im_file}: {e.__traceback__.tb_frame.f_code.co_name}'
+        
     return (im_file, cls), nf, nc, msg
 
 
@@ -98,19 +112,35 @@ def verify_image_label(args):
     # Number (missing, found, empty, corrupt), message, segments, keypoints
     nm, nf, ne, nc, msg, segments, keypoints = 0, 0, 0, 0, "", [], None
     try:
-        # Verify images
-        im = Image.open(im_file)
-        im.verify()  # PIL verify
-        shape = exif_size(im)  # image size
-        shape = (shape[1], shape[0])  # hw
-        assert (shape[0] > 9) & (shape[1] > 9), f"image size {shape} <10 pixels"
-        assert im.format.lower() in IMG_FORMATS, f"invalid image format {im.format}"
-        if im.format.lower() in ("jpg", "jpeg"):
-            with open(im_file, "rb") as f:
-                f.seek(-2, 2)
-                if f.read() != b"\xff\xd9":  # corrupt JPEG
-                    ImageOps.exif_transpose(Image.open(im_file)).save(im_file, "JPEG", subsampling=0, quality=100)
-                    msg = f"{prefix}WARNING ⚠️ {im_file}: corrupt JPEG restored and saved"
+        # Handle npy files. !!!! Modified !!!!
+        if im_file.endswith('.npy'):
+            # Load the .npy file
+            im = np.load(im_file)
+            # Ensure the data is at least 2D (height, width), but can have any number of channels
+            assert im.ndim >= 2, f'Expected at least 2D array, got {im.ndim}D'
+            # Get the spatial dimensions (height, width) regardless of the number of channels
+            shape = im.shape[:2]
+            # Verify the spatial dimensions are larger than 10x10 pixels
+            assert (shape[0] > 9) & (shape[1] > 9), f'image size {shape} <10 pixels'
+            
+            print(f'Loaded {im_file} with shape {im.shape}')
+            msg += f'\n{prefix}SUCESS ⚠️ {im_file}: Loaded {im_file} with shape {im.shape}'
+        else:
+            # Verify images
+            im = Image.open(im_file)
+            im.verify()  # PIL verify
+            shape = exif_size(im)  # image size
+            shape = (shape[1], shape[0])  # hw
+            assert (shape[0] > 9) & (shape[1] > 9), f"image size {shape} <10 pixels"
+            assert im.format.lower() in IMG_FORMATS, f"invalid image format {im.format}"
+
+            # Handling of JPEG corruption remains unchanged
+            if im.format.lower() in ("jpg", "jpeg"):
+                with open(im_file, "rb") as f:
+                    f.seek(-2, 2)
+                    if f.read() != b"\xff\xd9":  # corrupt JPEG
+                        ImageOps.exif_transpose(Image.open(im_file)).save(im_file, "JPEG", subsampling=0, quality=100)
+                        msg = f"{prefix}WARNING ⚠️ {im_file}: corrupt JPEG restored and saved"
 
         # Verify labels
         if os.path.isfile(lb_file):
@@ -160,7 +190,7 @@ def verify_image_label(args):
         return im_file, lb, shape, segments, keypoints, nm, nf, ne, nc, msg
     except Exception as e:
         nc = 1
-        msg = f"{prefix}WARNING ⚠️ {im_file}: ignoring corrupt image/label: {e}"
+        msg = f"{prefix}WARNING ⚠️ !!!I was here, Hälsningar Image Label!!!! {im_file}: ignoring corrupt image/label: {e}"
         return [None, None, None, None, None, nm, nf, ne, nc, msg]
 
 

@@ -100,6 +100,8 @@ class BaseDataset(Dataset):
     def get_img_files(self, img_path):
         """Read image files."""
         try:
+            # TODO: Load npy files
+
             f = []  # image files
             for p in img_path if isinstance(img_path, list) else [img_path]:
                 p = Path(p)  # os-agnostic
@@ -115,8 +117,11 @@ class BaseDataset(Dataset):
                 else:
                     raise FileNotFoundError(f"{self.prefix}{p} does not exist")
             im_files = sorted(x.replace("/", os.sep) for x in f if x.split(".")[-1].lower() in IMG_FORMATS)
+            # List first 3 files for reference. Can be any file type. Read from disk.
+            all_files = os.listdir(img_path)
+
             # self.img_files = sorted([x for x in f if x.suffix[1:].lower() in IMG_FORMATS])  # pathlib
-            assert im_files, f"{self.prefix}No images found in {img_path}"
+            assert im_files, f"{self.prefix}No images found in {img_path}. Supported formats are {IMG_FORMATS}.\nFiles in diretory: {all_files}"
         except Exception as e:
             raise FileNotFoundError(f"{self.prefix}Error loading data from {img_path}\n{HELP_URL}") from e
         if self.fraction < 1:
@@ -142,42 +147,107 @@ class BaseDataset(Dataset):
             if self.single_cls:
                 self.labels[i]["cls"][:, 0] = 0
 
+    # def load_image(self, i, rect_mode=True):
+    #     """Loads 1 image from dataset index 'i', returns (im, resized hw)."""
+    #     im, f, fn = self.ims[i], self.im_files[i], self.npy_files[i]
+    #     if im is None:  # not cached in RAM
+    #         if fn.exists():  # load npy
+    #             try:
+    #                 im = np.load(fn)
+    #             except Exception as e:
+    #                 LOGGER.warning(f"{self.prefix}WARNING ⚠️ Removing corrupt *.npy image file {fn} due to: {e}")
+    #                 Path(fn).unlink(missing_ok=True)
+    #                 im = cv2.imread(f)  # BGR
+    #         else:  # read image
+    #             im = cv2.imread(f)  # BGR
+    #         if im is None:
+    #             raise FileNotFoundError(f"Image Not Found {f}")
+
+    #         h0, w0 = im.shape[:2]  # orig hw
+    #         if rect_mode:  # resize long side to imgsz while maintaining aspect ratio
+    #             r = self.imgsz / max(h0, w0)  # ratio
+    #             if r != 1:  # if sizes are not equal
+    #                 w, h = (min(math.ceil(w0 * r), self.imgsz), min(math.ceil(h0 * r), self.imgsz))
+    #                 im = cv2.resize(im, (w, h), interpolation=cv2.INTER_LINEAR)
+    #         elif not (h0 == w0 == self.imgsz):  # resize by stretching image to square imgsz
+    #             im = cv2.resize(im, (self.imgsz, self.imgsz), interpolation=cv2.INTER_LINEAR)
+
+    #         # Add to buffer if training with augmentations
+    #         if self.augment:
+    #             self.ims[i], self.im_hw0[i], self.im_hw[i] = im, (h0, w0), im.shape[:2]  # im, hw_original, hw_resized
+    #             self.buffer.append(i)
+    #             if len(self.buffer) >= self.max_buffer_length:
+    #                 j = self.buffer.pop(0)
+    #                 self.ims[j], self.im_hw0[j], self.im_hw[j] = None, None, None
+
+    #         return im, (h0, w0), im.shape[:2]
+
+    #     return self.ims[i], self.im_hw0[i], self.im_hw[i]
+
     def load_image(self, i, rect_mode=True):
         """Loads 1 image from dataset index 'i', returns (im, resized hw)."""
         im, f, fn = self.ims[i], self.im_files[i], self.npy_files[i]
         if im is None:  # not cached in RAM
-            if fn.exists():  # load npy
-                try:
-                    im = np.load(fn)
-                except Exception as e:
-                    LOGGER.warning(f"{self.prefix}WARNING ⚠️ Removing corrupt *.npy image file {fn} due to: {e}")
-                    Path(fn).unlink(missing_ok=True)
-                    im = cv2.imread(f)  # BGR
-            else:  # read image
+            if fn.exists() and fn.suffix == '.npy':  # Check if corresponding .npy file exists
+                im = np.load(fn)  # Load .npy file
+                # Note: Assume .npy file contains data in WHC format compatible with your model.
+                # If your .npy data is not in HWC format, you might need to transpose it.
+                # Example: im = im.transpose((2, 0, 1)) if your model expects CHW format.
+
+                # Check if image is in WHC format. If not, transpose it.
+                if len(im.shape) == 3 and im.shape[2] < im.shape[0] and im.shape[2] < im.shape[1]:  # Assumes C to be the smallest dimension (HWC format)
+                    im = im.transpose((1, 0, 2))
+                    # TODO: Make sure check which dimensions is the H and W and transpose accordingly
+                elif len(im.shape) != 3:
+                    raise ValueError(f"Invalid .npy file: {fn} is not in WHC format.")                    
+                
+                # Additional preprocessing steps for .npy data might be required here.
+                # This could include normalization, resizing, or other transformations
+                # specific to the nature of your multispectral or stacked image data.
+
+                # Perform resizing if necessary. One channel at the time. Assume HWC format.
+                # Resizing logic for .npy data
+                h0, w0 = im.shape[:2]  # original height and width
+                if rect_mode:  # resize long side to imgsz while maintaining aspect ratio
+                    r = self.imgsz / max(h0, w0)  # ratio
+                    if r != 1:  # if sizes are not equal
+                        # Calculate new size preserving aspect ratio
+                        w, h = (min(math.ceil(w0 * r), self.imgsz), min(math.ceil(h0 * r), self.imgsz))
+                        # Resize each channel individually
+                        im = np.stack([cv2.resize(im[:, :, c], (w, h), interpolation=cv2.INTER_LINEAR) for c in range(im.shape[2])], axis=-1)
+                elif not (h0 == w0 == self.imgsz):  # resize by stretching image to square imgsz
+                    im = np.stack([cv2.resize(im[:, :, c], (self.imgsz, self.imgsz), interpolation=cv2.INTER_LINEAR) for c in range(im.shape[2])], axis=-1)
+
+            else:  # Regular image loading path
                 im = cv2.imread(f)  # BGR
-            if im is None:
-                raise FileNotFoundError(f"Image Not Found {f}")
+                if im is None:
+                    raise FileNotFoundError(f"Image Not Found {f}")
 
-            h0, w0 = im.shape[:2]  # orig hw
-            if rect_mode:  # resize long side to imgsz while maintaining aspect ratio
-                r = self.imgsz / max(h0, w0)  # ratio
-                if r != 1:  # if sizes are not equal
-                    w, h = (min(math.ceil(w0 * r), self.imgsz), min(math.ceil(h0 * r), self.imgsz))
-                    im = cv2.resize(im, (w, h), interpolation=cv2.INTER_LINEAR)
-            elif not (h0 == w0 == self.imgsz):  # resize by stretching image to square imgsz
-                im = cv2.resize(im, (self.imgsz, self.imgsz), interpolation=cv2.INTER_LINEAR)
+                h0, w0 = im.shape[:2]  # original height and width
+                if rect_mode:  # resize long side to imgsz while maintaining aspect ratio
+                    r = self.imgsz / max(h0, w0)  # ratio
+                    if r != 1:  # if sizes are not equal
+                        # Calculate new size preserving aspect ratio
+                        w, h = (min(math.ceil(w0 * r), self.imgsz), min(math.ceil(h0 * r), self.imgsz))
+                        im = cv2.resize(im, (w, h), interpolation=cv2.INTER_LINEAR)
+                elif not (h0 == w0 == self.imgsz):  # resize by stretching image to square imgsz
+                    im = cv2.resize(im, (self.imgsz, self.imgsz), interpolation=cv2.INTER_LINEAR)
 
-            # Add to buffer if training with augmentations
+            # Cache logic for augmented training data
             if self.augment:
-                self.ims[i], self.im_hw0[i], self.im_hw[i] = im, (h0, w0), im.shape[:2]  # im, hw_original, hw_resized
+                self.ims[i], self.im_hw0[i], self.im_hw[i] = im, (h0, w0), im.shape[:2]  # cache im, original hw, resized hw
                 self.buffer.append(i)
                 if len(self.buffer) >= self.max_buffer_length:
                     j = self.buffer.pop(0)
                     self.ims[j], self.im_hw0[j], self.im_hw[j] = None, None, None
 
-            return im, (h0, w0), im.shape[:2]
+            return im, (h0, w0), im.shape[:2]  # Return image, original hw, resized hw
+        
+        # TODO: Handle cached and augmented images here
 
+        # If image is cached
         return self.ims[i], self.im_hw0[i], self.im_hw[i]
+
 
     def cache_images(self, cache):
         """Cache images to memory or disk."""

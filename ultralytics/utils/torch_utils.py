@@ -58,6 +58,10 @@ def smart_inference_mode():
 
 def get_cpu_info():
     """Return a string with system CPU information, i.e. 'Apple M2'."""
+    # Temporary fix while debugging:
+    return '11th Gen Intel Core(TM) i9-11900 2.50GHz'
+
+
     import cpuinfo  # pip install py-cpuinfo
 
     k = "brand_raw", "hardware_raw", "arch_string_raw"  # info keys sorted by preference (not all keys always available)
