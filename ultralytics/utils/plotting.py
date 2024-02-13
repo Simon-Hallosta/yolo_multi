@@ -727,7 +727,15 @@ def plot_images(
     mosaic = np.full((int(ns * h), int(ns * w), 3), 255, dtype=np.uint8)  # init
     for i in range(bs):
         x, y = int(w * (i // ns)), int(h * (i % ns))  # block origin
-        mosaic[y : y + h, x : x + w, :] = images[i].transpose(1, 2, 0)
+
+        # If image is multispectral, use the first 3 channels (BGR) for plotting
+        if images.shape[1] > 3: # Assuming (Batch size, C, H, W) format
+            im = images[i][:3, :, :]
+            # # Throw an exception 
+            # raise Exception(f"Multispectral image has shape: {im.shape}.\nImages batch has size: {images.shape}.")
+            mosaic[y : y + h, x : x + w, :] = im.transpose(1, 2, 0)
+        else:
+            mosaic[y : y + h, x : x + w, :] = images[i].transpose(1, 2, 0)
 
     # Resize (optional)
     scale = max_size / ns / max(h, w)

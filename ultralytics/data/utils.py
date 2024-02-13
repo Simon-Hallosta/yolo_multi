@@ -40,6 +40,46 @@ VID_FORMATS = "asf", "avi", "gif", "m4v", "mkv", "mov", "mp4", "mpeg", "mpg", "t
 PIN_MEMORY = str(os.getenv("PIN_MEMORY", True)).lower() == "true"  # global pin_memory for dataloaders
 
 
+def copyMakeBorder(image, top, bottom, left, right, borderType='constant', value=114):
+    """
+    Mimics cv2.copyMakeBorder functionality using NumPy for images with any number of channels.
+
+    Parameters:
+        image (numpy.ndarray): Input image.
+        top, bottom, left, right (int): Padding widths.
+        borderType (cv2.BORDER_CONSTANT): Type of border to be applied. Currently, only cv2.BORDER_CONSTANT is supported.
+        value (int or tuple): Border value if borderType is cv2.BORDER_CONSTANT. For multichannel images, use a tuple.
+
+    Returns:
+        numpy.ndarray: Padded image.
+    """
+    if borderType != 'constant':
+        raise ValueError("Currently, only 'constant' border type is supported.")
+
+    # Ensure value has the correct format for padding
+    if np.isscalar(value):
+        value = (value,) * image.shape[-1]
+    else:
+        # Calculate the mean of provided values if the tuple doesn't match the number of channels
+        if len(value) != image.shape[-1]:
+            mean_value = np.mean(value)
+            value = (mean_value,) * image.shape[-1]  # Extend using mean value for all channels
+
+    # Setup pad width for each dimension and ensure constant_values is correctly formatted
+    constant_values = [(v, v) for v in value]  # Match pad_width structure
+
+    # Get input image shape
+    H, W = image.shape[:2]
+    C = image.shape[2] if image.ndim == 3 else 1
+    # Create an array for the output image with added border
+    padded_image_shape = (H + top + bottom, W + left + right, C) if C > 1 else (H + top + bottom, W + left + right)
+    padded_image = np.zeros(padded_image_shape, dtype=image.dtype)
+    for c in range(C):
+                padded_image[:, :, c] = np.pad(image[:, :, c], ((top, bottom), (left, right)), mode=borderType, constant_values=constant_values[c])
+
+    return padded_image
+
+
 def img2label_paths(img_paths):
     """Define label paths as a function of image paths."""
     sa, sb = f"{os.sep}images{os.sep}", f"{os.sep}labels{os.sep}"  # /images/, /labels/ substrings
@@ -84,8 +124,8 @@ def verify_image(args):
             # Verify the spatial dimensions are larger than 10x10 pixels
             assert (shape[0] > 9) & (shape[1] > 9), f'image size {shape} <10 pixels'
             
-            print(f'Loaded {im_file} with shape {im.shape}')
-            msg += f'\n{prefix}SUCESS ⚠️ {im_file}: Loaded {im_file} with shape {im.shape}'
+            # print(f'Loaded {im_file} with shape {im.shape}')
+            # msg += f'\n{prefix}SUCESS ⚠️ {im_file}: Loaded {im_file} with shape {im.shape}'
 
         else:
             # Original code to handle standard image formats
@@ -123,8 +163,8 @@ def verify_image_label(args):
             # Verify the spatial dimensions are larger than 10x10 pixels
             assert (shape[0] > 9) & (shape[1] > 9), f'image size {shape} <10 pixels'
             
-            print(f'Loaded {im_file} with shape {im.shape}')
-            msg += f'\n{prefix}SUCESS ⚠️ {im_file}: Loaded {im_file} with shape {im.shape}'
+            # print(f'Loaded {im_file} with shape {im.shape}')
+            # msg += f'\n{prefix}SUCESS ⚠️ {im_file}: Loaded {im_file} with shape {im.shape}'
         else:
             # Verify images
             im = Image.open(im_file)

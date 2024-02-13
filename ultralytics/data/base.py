@@ -196,7 +196,7 @@ class BaseDataset(Dataset):
 
                 # Check if image is in WHC format. If not, transpose it.
                 if len(im.shape) == 3 and im.shape[2] < im.shape[0] and im.shape[2] < im.shape[1]:  # Assumes C to be the smallest dimension (HWC format)
-                    im = im.transpose((1, 0, 2))
+                    im = im.transpose((0, 1, 2))
                     # TODO: Make sure check which dimensions is the H and W and transpose accordingly
                 elif len(im.shape) != 3:
                     raise ValueError(f"Invalid .npy file: {fn} is not in WHC format.")                    

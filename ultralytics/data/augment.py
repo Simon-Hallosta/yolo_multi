@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import torchvision.transforms as T
 
+from ultralytics.data.utils import copyMakeBorder
 from ultralytics.utils import LOGGER, colorstr
 from ultralytics.utils.checks import check_version
 from ultralytics.utils.instance import Instances
@@ -727,9 +728,15 @@ class LetterBox:
             img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
         top, bottom = int(round(dh - 0.1)) if self.center else 0, int(round(dh + 0.1))
         left, right = int(round(dw - 0.1)) if self.center else 0, int(round(dw + 0.1))
-        img = cv2.copyMakeBorder(
-            img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(114, 114, 114)
+        # img = cv2.copyMakeBorder(
+        #     img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(114, 114, 114)
+        # )  # add border
+
+        # Using my own implementation of copyMakeBorder that handles multispectral data. 
+        img = copyMakeBorder(
+            img, top, bottom, left, right, value=114
         )  # add border
+
         if labels.get("ratio_pad"):
             labels["ratio_pad"] = (labels["ratio_pad"], (left, top))  # for evaluation
 
@@ -748,6 +755,8 @@ class LetterBox:
         labels["instances"].scale(*ratio)
         labels["instances"].add_padding(padw, padh)
         return labels
+    
+
 
 
 class CopyPaste:
